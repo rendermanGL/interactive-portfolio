@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { SendHorizonal, RadioTower, Database } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 
-function timeAgo(date: Date) {
+function timeAgo(date: Date | string) {
   const d = new Date(date);
   const s = Math.floor((Date.now() - d.getTime()) / 1000);
   if (s < 60) return "just now";

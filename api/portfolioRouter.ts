@@ -1,38 +1,115 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, publicQuery } from "./middleware";
-import { getDb } from "./queries/connection";
-import { projects, experience, skillGroups, guestbookEntries, siteEvents } from "@db/schema";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { getSupabase } from "./lib/supabase";
+
+// Row shapes returned by Supabase (column names preserved from the old MySQL schema)
+export interface ProjectRow {
+  id: number;
+  slug: string;
+  title: string;
+  tagline: string;
+  description: string;
+  outcome: string | null;
+  techStack: string[];
+  status: string;
+  accent: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ExperienceRow {
+  id: number;
+  role: string;
+  company: string;
+  companyDesc: string | null;
+  location: string;
+  period: string;
+  bullets: string[];
+  current: boolean;
+  era: string;
+  sortOrder: number;
+}
+
+export interface SkillGroupRow {
+  id: number;
+  title: string;
+  icon: string;
+  items: string[];
+  sortOrder: number;
+}
+
+export interface GuestbookEntryRow {
+  id: number;
+  name: string;
+  message: string;
+  createdAt: string;
+}
+
+interface StatsOverview {
+  visits: number;
+  signals: number;
+  tours: number;
+}
+
+function rethrow(error: { message: string } | null): void {
+  if (error) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+  }
+}
 
 export const portfolioRouter = createRouter({
-  projects: publicQuery.query(() =>
-    getDb().select().from(projects).orderBy(asc(projects.sortOrder)),
-  ),
+  projects: publicQuery.query(async () => {
+    const { data, error } = await getSupabase()
+      .from("projects")
+      .select("*")
+      .order("sortOrder", { ascending: true });
+    rethrow(error);
+    return (data ?? []) as ProjectRow[];
+  }),
 
-  experience: publicQuery.query(() =>
-    getDb().select().from(experience).orderBy(asc(experience.sortOrder)),
-  ),
+  experience: publicQuery.query(async () => {
+    const { data, error } = await getSupabase()
+      .from("experience")
+      .select("*")
+      .order("sortOrder", { ascending: true });
+    rethrow(error);
+    return (data ?? []) as ExperienceRow[];
+  }),
 
-  skillGroups: publicQuery.query(() =>
-    getDb().select().from(skillGroups).orderBy(asc(skillGroups.sortOrder)),
-  ),
+  skillGroups: publicQuery.query(async () => {
+    const { data, error } = await getSupabase()
+      .from("skill_groups")
+      .select("*")
+      .order("sortOrder", { ascending: true });
+    rethrow(error);
+    return (data ?? []) as SkillGroupRow[];
+  }),
 
   projectBySlug: publicQuery
     .input(z.object({ slug: z.string() }))
     .query(async ({ input }) => {
-      const [row] = await getDb()
-        .select()
-        .from(projects)
-        .where(eq(projects.slug, input.slug))
-        .limit(1);
-      return row ?? null;
+      const { data, error } = await getSupabase()
+        .from("projects")
+        .select("*")
+        .eq("slug", input.slug)
+        .limit(1)
+        .maybeSingle();
+      rethrow(error);
+      return (data ?? null) as ProjectRow | null;
     }),
 });
 
 export const guestbookRouter = createRouter({
-  list: publicQuery.query(() =>
-    getDb().select().from(guestbookEntries).orderBy(desc(guestbookEntries.createdAt)).limit(50),
-  ),
+  list: publicQuery.query(async () => {
+    const { data, error } = await getSupabase()
+      .from("guestbook_entries")
+      .select("*")
+      .order("createdAt", { ascending: false })
+      .limit(50);
+    rethrow(error);
+    return (data ?? []) as GuestbookEntryRow[];
+  }),
 
   post: publicQuery
     .input(
@@ -42,40 +119,32 @@ export const guestbookRouter = createRouter({
       }),
     )
     .mutation(async ({ input }) => {
-      const [{ id }] = await getDb()
-        .insert(guestbookEntries)
-        .values({ name: input.name, message: input.message })
-        .$returningId();
-      const [entry] = await getDb()
+      const { data, error } = await getSupabase()
+        .from("guestbook_entries")
+        .insert({ name: input.name, message: input.message })
         .select()
-        .from(guestbookEntries)
-        .where(eq(guestbookEntries.id, id))
-        .limit(1);
-      return entry;
+        .single();
+      rethrow(error);
+      return data as GuestbookEntryRow;
     }),
 });
 
 export const statsRouter = createRouter({
   overview: publicQuery.query(async () => {
-    const db = getDb();
-    const [{ visits }] = await db
-      .select({ visits: sql<number>`count(*)` })
-      .from(siteEvents)
-      .where(eq(siteEvents.kind, "visit"));
-    const [{ signals }] = await db
-      .select({ signals: sql<number>`count(*)` })
-      .from(guestbookEntries);
-    const [{ tours }] = await db
-      .select({ tours: sql<number>`count(*)` })
-      .from(siteEvents)
-      .where(eq(siteEvents.kind, "tour_complete"));
-    return { visits: Number(visits), signals: Number(signals), tours: Number(tours) };
+    // Aggregate counts come from a security-definer Postgres function —
+    // raw site_events rows are never exposed to the anon role.
+    const { data, error } = await getSupabase().rpc("stats_overview");
+    rethrow(error);
+    return data as StatsOverview;
   }),
 
   track: publicQuery
     .input(z.object({ kind: z.string().min(1).max(50), meta: z.string().max(255).optional() }))
     .mutation(async ({ input }) => {
-      await getDb().insert(siteEvents).values({ kind: input.kind, meta: input.meta ?? null });
+      const { error } = await getSupabase()
+        .from("site_events")
+        .insert({ kind: input.kind, meta: input.meta ?? null });
+      rethrow(error);
       return { ok: true };
     }),
 });

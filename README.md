@@ -1,59 +1,66 @@
-# jm-os — Interactive Portfolio
+# Jeffrey Martin — Interactive Portfolio
 
-A full-stack, mobile-first personal portfolio built as an interactive operating system for Jeffrey Martin's career.
-
-## Highlights
-
-- **Guided tour** — a terminal-style boot sequence on first visit, with an optional JM-01 guide module (fully skippable, remembered via localStorage)
-- **Terminal palette** — press `` ` `` or use the nav button / mobile FAB. Commands: `help`, `go <section>`, `stats`, `tour`, `whoami`, `contact`, `sudo hire --jeffrey`
-- **Live database** — projects, experience, skills, guestbook entries and site analytics are all served from a real database via tRPC
-- **Signal Tower guestbook** — visitors leave messages that persist for everyone
-- **Mobile-first** — bottom tab nav on phones, two-column grids on iPad, full layout on desktop
+A futuristic, mobile-first interactive portfolio with a guided tour, a terminal
+command palette, a live guestbook, and real-time visit stats — all backed by a
+**real Supabase (Postgres) database**.
 
 ## Stack
 
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Framer Motion, lucide-react
-- **Backend**: Hono + tRPC 11 (superjson)
-- **Database**: Drizzle ORM (MySQL dialect; schema is portable to Postgres/Supabase)
+| Layer     | Tech                                                        |
+| --------- | ----------------------------------------------------------- |
+| Frontend  | React 19 · TypeScript · Vite · Tailwind CSS · framer-motion |
+| API       | Hono · tRPC 11 (end-to-end type safety, superjson)          |
+| Database  | **Supabase** Postgres 17 (RLS-secured, `@supabase/supabase-js`) |
+| Packaging | Docker (multi-stage ready) · Node 22                        |
 
-## Structure
+## Features
 
-```
-api/          Hono server + tRPC routers
-api/queries/  Database connection (lazy drizzle instance)
-contracts/    Shared types (frontend <-> backend)
-db/           Drizzle schema + seed
-db/seed.ts    Seeds projects, experience, skill groups from CV data
-src/components/  Starfield, Nav, Onboarding (boot + tour), TerminalPalette
-src/sections/    Hero, Projects, Timeline, Skills, Guestbook, Contact
-src/pages/       Home (composition + visit tracking)
-```
+- **Guided onboarding tour** — boot sequence → 6-step guided walkthrough with a
+  skip option; restartable anytime via the terminal (`tour` command)
+- **Terminal palette** — press `` ` `` and type `help`; try `sudo hire --jeffrey`
+- **Live guestbook** — visitor messages persist in Supabase
+- **Live stats** — visits / guestbook signals / completed tours, aggregated by a
+  security-definer Postgres function (raw analytics rows are never exposed)
+- **Interactive starfield** with pointer-repulsion physics
+- **Mobile-first** — bottom nav + safe-area padding on phones, top nav on
+  tablet/desktop
+
+## Database
+
+Schema + RLS policies + seed data live in [`scripts/`](scripts/):
+
+- `scripts/schema.sql` — tables, indexes, RLS policies, `stats_overview()` function
+- `scripts/seed.sql` — portfolio content (projects, experience, skills, guestbook)
+
+Row-Level Security is enabled on every table. The app connects with the
+**publishable (anon) key** only — no service key anywhere.
 
 ## Develop
 
 ```bash
 npm install
-cp .env.example .env   # fill in DATABASE_URL
-npm run db:push        # sync schema
-npx tsx db/seed.ts     # seed portfolio data
+cp .env.example .env   # fill in SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY
 npm run dev            # http://localhost:3000
 ```
 
-## Build & run
+## Deploy (any Node 22 host / Docker)
 
 ```bash
+npm install
 npm run build
-npm start              # NODE_ENV=production node dist/boot.js
+npm start              # serves frontend + API on :3000
 ```
 
-## Docker
+Or with Docker:
 
 ```bash
-docker build -t jm-os .
-docker run -p 3000:3000 --env-file .env jm-os
+docker build -t portfolio .
+docker run -p 3000:3000 --env-file .env portfolio
 ```
 
-## Notes
+## Environment
 
-- `package-lock.json` is not tracked here — run `npm install` once to regenerate it locally.
-- Environment variables are read from `.env` (never commit the real file).
+| Variable                  | Where to find it                          |
+| ------------------------- | ----------------------------------------- |
+| `SUPABASE_URL`            | Supabase Dashboard → Settings → API       |
+| `SUPABASE_PUBLISHABLE_KEY`| Supabase Dashboard → Settings → API Keys  |
